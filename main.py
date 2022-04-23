@@ -1,10 +1,13 @@
 from telegram import ReplyKeyboardMarkup
+from telegram import ReplyKeyboardRemove
 from telegram.ext import CommandHandler
 from telegram.ext import Updater, MessageHandler, Filters
 import json
 
-# import users
+import db_session
+from users import User
 
+# import users
 TOKEN = '5104628293:AAEn4SO-8-phjdqLj_M9U0E0EaeiZxHnQsU'
 
 # with open("data/script.json", encoding='UTF8', mode="r") as f:
@@ -18,17 +21,28 @@ with open("data/forks.json", encoding='UTF8', mode="r") as f:
 # Их сигнатура и поведение аналогичны обработчикам текстовых сообщений.
 def start(update, context):
     help(update, context)
+    auth(update, context)
+
     context.user_data["cur"] = "0"
     state(update, context)
+
+
+def auth(update, context):
+    user = User()
+    user.name = update.message.chat.id
+    user.amount = 0
+
+    db_sess = db_session.create_session()
+    db_sess.add(user)
+    db_sess.commit()
 
 
 def help(update, context):
     update.message.reply_text(
         'Это квест-бот по роману Ф. М. Достоевского \"Преступление и наказание\". '
-        'Вы играете за Родиона Раскольникова и принимаете решения от его лица.\n'
+        'Вы играете за Родиона Раскольникова и принимаете решения от его лица.\n\n'
         'Нажмите /start для прохождения квеста с начала или /next '
-        'чтобы продолжить прохождение с того момента, на котором вы остановились.\n'
-        'Нажмите /stop, если вам надоело играть.'
+        'чтобы продолжить прохождение с того момента, на котором вы остановились.'
     )
 
 
@@ -38,8 +52,8 @@ def stop(update, context):
     context.user_data["cur"] = "0"
 
 
-
 def state(update, context):
+
     cur = context.user_data["cur"]
 
     answer = update.message.text
@@ -49,22 +63,43 @@ def state(update, context):
         # был дан правильный ответ
         if answer == states[cur]["quiz"]:
             # увеличим личный счет
+            user = db_sess.query(User).filter(User.name == update.message.chat.id).first()
+            user.amount += 100
+            db_sess.commit()
+
             update.message.reply_text(states[cur]["reply_yes"])
         else:
             update.message.reply_text(states[cur]["reply_no"])
 
-    if states[cur]["connection"]:
+    if states[cur]["connection"] and len(states[cur]["buttons"]) > 0:
         for i in range(len(states[cur]["buttons"])):
             if states[cur]["buttons"][i] == answer:
                 # переход в другое состояние
                 cur = states[cur]["connection"][i]
                 break
 
+        if cur == "finish":
+            print("finish")
+            user = db_sess.query(User).filter(User.name == update.message.chat.id).first()
+            print(user.amount)
+            text = states[cur]["text"] + str(user.amount)
+            if states[cur]["animation"]:
+                context.bot.send_animation(update.message.chat.id,
+                                       animation=open(states[cur]["animation"], 'rb'),
+                                       caption=text,
+                                       reply_markup=ReplyKeyboardRemove())
+            else:
+                update.message.reply_text(text,
+                                          reply_markup=ReplyKeyboardRemove())
+            return
+
         # кнопки
-        reply_keyboard = [[states[cur]["buttons"][i]] for i in range(len(states[cur]["buttons"]))]
-        markup = ReplyKeyboardMarkup(reply_keyboard,
-                                     one_time_keyboard=True,
-                                     resize_keyboard=True)
+        markup = ReplyKeyboardRemove()
+        if states[cur]["buttons"]:
+            reply_keyboard = [[states[cur]["buttons"][i]] for i in range(len(states[cur]["buttons"]))]
+            markup = ReplyKeyboardMarkup(reply_keyboard,
+                                         one_time_keyboard=False,
+                                         resize_keyboard=True)
 
         # печать текста и/или картинки
         if states[cur]["image"] != "":
@@ -88,7 +123,8 @@ def state(update, context):
         context.user_data["cur"] = cur
 
     else:
-        update.message.reply_text(states[cur]["text"])
+        update.message.reply_text(states[cur]["text"],
+                                  reply_markup=ReplyKeyboardRemove())
 
 
 def main():
@@ -118,7 +154,7 @@ def main():
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("help", help))
     dp.add_handler(CommandHandler("next", state))
-    dp.add_handler(CommandHandler("next", stop))
+    dp.add_handler(CommandHandler("stop", stop))
 
     # Регистрируем обработчик в диспетчере.
     text_handler = MessageHandler(Filters.text & ~Filters.command, state)
@@ -131,4 +167,6 @@ def main():
 
 
 if __name__ == '__main__':
+    db_session.global_init("db/quest.db")
+    db_sess = db_session.create_session()
     main()
