@@ -1,3 +1,6 @@
+"""
+Таблица для хранения перманентной информации о пользователе
+"""
 import sqlalchemy
 
 from db_session import SqlAlchemyBase

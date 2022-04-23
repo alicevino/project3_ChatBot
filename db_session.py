@@ -1,3 +1,6 @@
+"""
+Работа с базой данных
+"""
 import sqlalchemy as sa
 import sqlalchemy.orm as orm
 from sqlalchemy.orm import Session

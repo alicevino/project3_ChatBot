@@ -1,3 +1,7 @@
+"""
+Основные обработчики событий чат-бота.
+Чтение квест-данных в формате json.
+"""
 from telegram import ReplyKeyboardMarkup
 from telegram import ReplyKeyboardRemove
 from telegram.ext import CommandHandler
@@ -20,13 +24,14 @@ with open("data/forks.json", encoding='UTF8', mode="r") as f:
 # Напишем соответствующие функции.
 # Их сигнатура и поведение аналогичны обработчикам текстовых сообщений.
 def start(update, context):
-    help(update, context)
+
     auth(update, context)
 
     context.user_data["cur"] = "0"
     state(update, context)
 
 
+# создание записи для пользователя в базе данных
 def auth(update, context):
     user = User()
     user.name = update.message.chat.id
@@ -37,6 +42,7 @@ def auth(update, context):
     db_sess.commit()
 
 
+# информация о квест-боте
 def help(update, context):
     update.message.reply_text(
         'Это квест-бот по роману Ф. М. Достоевского \"Преступление и наказание\". '
@@ -46,14 +52,18 @@ def help(update, context):
     )
 
 
+# функция для остановки квест-бота
 def stop(update, context):
     update.message.reply_text('Очень жаль, что вам надоело.\n'
                               'Можем поиграть в следующий раз')
     context.user_data["cur"] = "0"
 
 
+# основной обработчик квест-бота -
+# обрабатывает ответ пользователя на основе текущего состояния,
+# прочитанного из файла состояний на json
 def state(update, context):
-
+    # текущее состояние из контекста пользователя
     cur = context.user_data["cur"]
 
     answer = update.message.text
@@ -62,7 +72,7 @@ def state(update, context):
     if "quiz" in states[cur]:
         # был дан правильный ответ
         if answer == states[cur]["quiz"]:
-            # увеличим личный счет
+            # увеличим личный счет пользователя
             user = db_sess.query(User).filter(User.name == update.message.chat.id).first()
             user.amount += 100
             db_sess.commit()
@@ -71,6 +81,7 @@ def state(update, context):
         else:
             update.message.reply_text(states[cur]["reply_no"])
 
+    # определяем состояние для перехода
     if states[cur]["connection"] and len(states[cur]["buttons"]) > 0:
         for i in range(len(states[cur]["buttons"])):
             if states[cur]["buttons"][i] == answer:
@@ -78,6 +89,7 @@ def state(update, context):
                 cur = states[cur]["connection"][i]
                 break
 
+        # обработка последнего состояния
         if cur == "finish":
             print("finish")
             user = db_sess.query(User).filter(User.name == update.message.chat.id).first()
