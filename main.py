@@ -35,19 +35,19 @@ def start(update, context):
 def auth(update, context):
     user = User()
     user.name = update.message.chat.id
+    # print(update.message.from_user)
     user.amount = 0
 
-    db_sess = db_session.create_session()
-    db_sess.add(user)
+    # создать запись для пользователя
+    if db_sess.query(User).filter(User.name == update.message.chat.id).count() == 0:
+        db_sess.add(user)
     db_sess.commit()
 
 
 # информация о квест-боте
 def help(update, context):
-    update.message.reply_text(
-        'Это квест-бот по роману Ф. М. Достоевского \"Преступление и наказание\". '
-        'Вы играете за Родиона Раскольникова и принимаете решения от его лица.\n\n'
-        'Нажмите /start для прохождения квеста с начала или /next '
+    update.message.reply_text(states["0"]["text"] +
+        '\n\nНажмите /start для прохождения квеста с начала или /next '
         'чтобы продолжить прохождение с того момента, на котором вы остановились.'
     )
 
@@ -70,11 +70,31 @@ def state(update, context):
 
     # это был ответ на квиз
     if "quiz" in states[cur]:
+        # работа с картой, увеличить масштаб
+        if answer == "<Увеличить масштаб>":
+            # кнопки
+            if states[cur]["buttons"]:
+                reply_keyboard = [[states[cur]["buttons"][i]] for i in range(len(states[cur]["buttons"]) - 1)]
+                markup = ReplyKeyboardMarkup(reply_keyboard,
+                                             one_time_keyboard=False,
+                                             resize_keyboard=True)
+                # картинка и текст
+                context.bot.send_photo(update.message.chat.id,
+                                       photo=states[cur]["link"] + '&z=17',
+                                       caption=states[cur]["text"],
+                                       reply_markup=markup)
+                return
+
         # был дан правильный ответ
         if answer == states[cur]["quiz"]:
-            # увеличим личный счет пользователя
+            # работа с базой
             user = db_sess.query(User).filter(User.name == update.message.chat.id).first()
-            user.amount += 100
+            if answer == "Потратить":
+                # обнулить счет
+                user.amount = 0
+            else:
+                # увеличим личный счет пользователя
+                user.amount += 100
             db_sess.commit()
 
             update.message.reply_text(states[cur]["reply_yes"])
@@ -82,19 +102,19 @@ def state(update, context):
             update.message.reply_text(states[cur]["reply_no"])
 
     # определяем состояние для перехода
-    if states[cur]["connection"] and len(states[cur]["buttons"]) > 0:
+    if states[cur]["connection"] and len(states[cur]["buttons"]) > 0 or cur == "finish":
+
         for i in range(len(states[cur]["buttons"])):
             if states[cur]["buttons"][i] == answer:
                 # переход в другое состояние
                 cur = states[cur]["connection"][i]
                 break
 
+        text = states[cur]["text"]
+
         # обработка последнего состояния
         if cur == "finish":
-            print("finish")
-            user = db_sess.query(User).filter(User.name == update.message.chat.id).first()
-            print(user.amount)
-            text = states[cur]["text"] + str(user.amount)
+
             if states[cur]["animation"]:
                 context.bot.send_animation(update.message.chat.id,
                                        animation=open(states[cur]["animation"], 'rb'),
@@ -104,6 +124,23 @@ def state(update, context):
                 update.message.reply_text(text,
                                           reply_markup=ReplyKeyboardRemove())
             return
+
+        # обработка состояния для работы с базой (счет пользователя)
+        if cur == "amount":
+            user = db_sess.query(User).filter(User.name == update.message.chat.id).first()
+            print(user.amount)
+            if user.amount == 0:
+                text = "У вас на счету 0 руб. Попробуйте правильно ответить на вопросы в следующий раз"
+                reply_keyboard = [["дальше"]]
+                markup = ReplyKeyboardMarkup(reply_keyboard,
+                                             one_time_keyboard=False,
+                                             resize_keyboard=True)
+                update.message.reply_text(text,
+                                          reply_markup=markup)
+                context.user_data["cur"] = "finish"
+                return
+            else:
+                text = states[cur]["text"] + str(user.amount) + ' руб.'
 
         # кнопки
         markup = ReplyKeyboardRemove()
@@ -118,17 +155,17 @@ def state(update, context):
             # картинка и текст
             context.bot.send_photo(update.message.chat.id,
                                    photo=open(states[cur]["image"], 'rb'),
-                                   caption=states[cur]["text"],
+                                   caption=text,
                                    reply_markup=markup)
         elif states[cur]["link"] != "":
-            # картинка и текст
+            # картинка-линк и текст
             context.bot.send_photo(update.message.chat.id,
-                                   photo=states[cur]["link"],
-                                   caption=states[cur]["text"],
+                                   photo=states[cur]["link"] + '&z=13',
+                                   caption=text,
                                    reply_markup=markup)
         else:
             # только текст
-            update.message.reply_text(states[cur]["text"],
+            update.message.reply_text(text,
                                       reply_markup=markup)
 
         # сохранение текущего состояния в контекст пользователя
