@@ -12,7 +12,7 @@ import db_session
 from users import User
 
 # import users
-TOKEN = '5104628293:AAEn4SO-8-phjdqLj_M9U0E0EaeiZxHnQsU'
+TOKEN = ''
 
 # with open("data/script.json", encoding='UTF8', mode="r") as f:
 #     script = json.load(f)
